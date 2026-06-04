@@ -1,0 +1,465 @@
+// HR Analytics Mock Data Generator
+// Generates 12 months of historical data with seasonality
+
+export interface Vacancy {
+  id: string;
+  title: string;
+  department: string;
+  hrManagerId: string;
+}
+
+export interface HRManager {
+  id: string;
+  name: string;
+  avatar?: string;
+}
+
+export interface Candidate {
+  id: string;
+  vacancyId: string;
+  hrManagerId: string;
+  source: string;
+  date: Date;
+  enteredBot: boolean;
+  startedSurvey: boolean;
+  completedSurvey: boolean;
+  status: 'rejected' | 'scheduled' | 'no_response' | 'hired' | 'cancelled';
+}
+
+export interface DailyMetrics {
+  date: string;
+  totalVisits: number;
+  botEntries: number;
+  surveyStarts: number;
+  surveyCompletions: number;
+  rejections: number;
+  scheduled: number;
+  noResponse: number;
+  cancellations: number;
+  hired: number;
+}
+
+export interface AggregatedMetrics {
+  botConversion: number;
+  botConversionChange: number;
+  surveyConversion: number;
+  surveyConversionChange: number;
+  rejectionRate: number;
+  scheduledRate: number;
+  noResponseRate: number;
+  avgInterviewsPerDay: number;
+  avgCancellationsPerDay: number;
+  totalCandidates: number;
+  totalInterviews: number;
+}
+
+// Seed for consistent data generation
+const seededRandom = (seed: number) => {
+  const x = Math.sin(seed++) * 10000;
+  return x - Math.floor(x);
+};
+
+// Departments and vacancies
+export const departments = [
+  'Разработка',
+  'Маркетинг',
+  'Продажи',
+  'HR',
+  'Финансы',
+  'Поддержка'
+];
+
+export const vacancies: Vacancy[] = [
+  { id: 'v1', title: 'Frontend разработчик', department: 'Разработка', hrManagerId: 'hr1' },
+  { id: 'v2', title: 'Backend разработчик', department: 'Разработка', hrManagerId: 'hr1' },
+  { id: 'v3', title: 'DevOps инженер', department: 'Разработка', hrManagerId: 'hr2' },
+  { id: 'v4', title: 'QA инженер', department: 'Разработка', hrManagerId: 'hr2' },
+  { id: 'v5', title: 'Product Manager', department: 'Разработка', hrManagerId: 'hr3' },
+  { id: 'v6', title: 'UX/UI дизайнер', department: 'Разработка', hrManagerId: 'hr3' },
+  { id: 'v7', title: 'Маркетолог', department: 'Маркетинг', hrManagerId: 'hr4' },
+  { id: 'v8', title: 'SMM специалист', department: 'Маркетинг', hrManagerId: 'hr4' },
+  { id: 'v9', title: 'Контент-менеджер', department: 'Маркетинг', hrManagerId: 'hr5' },
+  { id: 'v10', title: 'Sales менеджер', department: 'Продажи', hrManagerId: 'hr5' },
+  { id: 'v11', title: 'Account менеджер', department: 'Продажи', hrManagerId: 'hr6' },
+  { id: 'v12', title: 'HR специалист', department: 'HR', hrManagerId: 'hr6' },
+  { id: 'v13', title: 'Бухгалтер', department: 'Финансы', hrManagerId: 'hr7' },
+  { id: 'v14', title: 'Финансовый аналитик', department: 'Финансы', hrManagerId: 'hr7' },
+  { id: 'v15', title: 'Специалист поддержки', department: 'Поддержка', hrManagerId: 'hr8' },
+  { id: 'v16', title: 'Технический писатель', department: 'Поддержка', hrManagerId: 'hr8' },
+  { id: 'v17', title: 'Data Scientist', department: 'Разработка', hrManagerId: 'hr1' },
+  { id: 'v18', title: 'Mobile разработчик', department: 'Разработка', hrManagerId: 'hr2' },
+];
+
+export const hrManagers: HRManager[] = [
+  { id: 'hr1', name: 'Анна Иванова' },
+  { id: 'hr2', name: 'Петр Сидоров' },
+  { id: 'hr3', name: 'Мария Козлова' },
+  { id: 'hr4', name: 'Алексей Новиков' },
+  { id: 'hr5', name: 'Елена Морозова' },
+  { id: 'hr6', name: 'Дмитрий Волков' },
+  { id: 'hr7', name: 'Ольга Соколова' },
+  { id: 'hr8', name: 'Сергей Лебедев' },
+];
+
+export const trafficSources = [
+  'HeadHunter',
+  'Telegram',
+  'LinkedIn',
+  'Реферал',
+  'Сайт компании',
+  'Avito',
+  'SuperJob'
+];
+
+// Seasonality multipliers by month (0 = January)
+const seasonalityMultipliers: Record<number, number> = {
+  0: 1.3,  // Январь: +30%
+  1: 1.3,  // Февраль: +30%
+  2: 1.1,  // Март
+  3: 1.0,  // Апрель
+  4: 1.0,  // Май
+  5: 0.9,  // Июнь
+  6: 0.8,  // Июль: -20%
+  7: 0.8,  // Август: -20%
+  8: 1.1,  // Сентябрь
+  9: 1.1,  // Октябрь
+  10: 1.0, // Ноябрь
+  11: 0.6, // Декабрь: -40%
+};
+
+function getSeasonalMultiplier(date: Date): number {
+  return seasonalityMultipliers[date.getMonth()] || 1.0;
+}
+
+// Generate daily metrics for a specific date
+function generateDailyMetrics(date: Date, seed: number): DailyMetrics {
+  const seasonMultiplier = getSeasonalMultiplier(date);
+  const dayOfWeek = date.getDay();
+  const weekendMultiplier = dayOfWeek === 0 || dayOfWeek === 6 ? 0.3 : 1.0;
+  
+  const baseVisits = 50 + Math.floor(seededRandom(seed) * 30);
+  const totalVisits = Math.floor(baseVisits * seasonMultiplier * weekendMultiplier);
+  
+  // Conversion rates with some randomness
+  const botEntryRate = 0.65 + seededRandom(seed + 1) * 0.20; // 65-85%
+  const surveyStartRate = 0.70 + seededRandom(seed + 2) * 0.20; // 70-90%
+  const surveyCompleteRate = 0.70 + seededRandom(seed + 3) * 0.20; // 70-90%
+  
+  const botEntries = Math.floor(totalVisits * botEntryRate);
+  const surveyStarts = Math.floor(botEntries * surveyStartRate);
+  const surveyCompletions = Math.floor(surveyStarts * surveyCompleteRate);
+  
+  // Status distribution of completed surveys
+  const rejectionRate = 0.40 + seededRandom(seed + 4) * 0.20; // 40-60%
+  const scheduledRate = 0.20 + seededRandom(seed + 5) * 0.20; // 20-40%
+  const cancellationRate = 0.10 + seededRandom(seed + 6) * 0.15; // 10-25%
+  
+  const rejections = Math.floor(surveyCompletions * rejectionRate);
+  const scheduled = Math.floor(surveyCompletions * scheduledRate);
+  const cancellations = Math.floor(scheduled * cancellationRate);
+  const noResponse = surveyCompletions - rejections - scheduled;
+  const hired = Math.floor((scheduled - cancellations) * 0.4);
+  
+  return {
+    date: date.toISOString().split('T')[0],
+    totalVisits,
+    botEntries,
+    surveyStarts,
+    surveyCompletions,
+    rejections,
+    scheduled,
+    noResponse: Math.max(0, noResponse),
+    cancellations,
+    hired,
+  };
+}
+
+// Generate 12 months of historical data
+export function generateHistoricalData(): DailyMetrics[] {
+  const data: DailyMetrics[] = [];
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setFullYear(startDate.getFullYear() - 1);
+  
+  let currentDate = new Date(startDate);
+  let seed = 12345;
+  
+  while (currentDate <= endDate) {
+    data.push(generateDailyMetrics(new Date(currentDate), seed++));
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return data;
+}
+
+// Filter data by date range
+export function filterByDateRange(
+  data: DailyMetrics[],
+  startDate: Date,
+  endDate: Date
+): DailyMetrics[] {
+  const start = startDate.toISOString().split('T')[0];
+  const end = endDate.toISOString().split('T')[0];
+  return data.filter(d => d.date >= start && d.date <= end);
+}
+
+// Calculate aggregated metrics
+export function calculateMetrics(
+  data: DailyMetrics[],
+  previousPeriodData?: DailyMetrics[]
+): AggregatedMetrics {
+  if (data.length === 0) {
+    return {
+      botConversion: 0,
+      botConversionChange: 0,
+      surveyConversion: 0,
+      surveyConversionChange: 0,
+      rejectionRate: 0,
+      scheduledRate: 0,
+      noResponseRate: 0,
+      avgInterviewsPerDay: 0,
+      avgCancellationsPerDay: 0,
+      totalCandidates: 0,
+      totalInterviews: 0,
+    };
+  }
+  
+  const totals = data.reduce((acc, d) => ({
+    totalVisits: acc.totalVisits + d.totalVisits,
+    botEntries: acc.botEntries + d.botEntries,
+    surveyStarts: acc.surveyStarts + d.surveyStarts,
+    surveyCompletions: acc.surveyCompletions + d.surveyCompletions,
+    rejections: acc.rejections + d.rejections,
+    scheduled: acc.scheduled + d.scheduled,
+    noResponse: acc.noResponse + d.noResponse,
+    cancellations: acc.cancellations + d.cancellations,
+  }), {
+    totalVisits: 0,
+    botEntries: 0,
+    surveyStarts: 0,
+    surveyCompletions: 0,
+    rejections: 0,
+    scheduled: 0,
+    noResponse: 0,
+    cancellations: 0,
+  });
+  
+  const botConversion = totals.totalVisits > 0 
+    ? (totals.surveyStarts / totals.totalVisits) * 100 
+    : 0;
+  const surveyConversion = totals.surveyStarts > 0 
+    ? (totals.surveyCompletions / totals.surveyStarts) * 100 
+    : 0;
+  
+  // Calculate previous period metrics for comparison
+  let botConversionChange = 0;
+  let surveyConversionChange = 0;
+  
+  if (previousPeriodData && previousPeriodData.length > 0) {
+    const prevTotals = previousPeriodData.reduce((acc, d) => ({
+      totalVisits: acc.totalVisits + d.totalVisits,
+      surveyStarts: acc.surveyStarts + d.surveyStarts,
+      surveyCompletions: acc.surveyCompletions + d.surveyCompletions,
+    }), { totalVisits: 0, surveyStarts: 0, surveyCompletions: 0 });
+    
+    const prevBotConversion = prevTotals.totalVisits > 0 
+      ? (prevTotals.surveyStarts / prevTotals.totalVisits) * 100 
+      : 0;
+    const prevSurveyConversion = prevTotals.surveyStarts > 0 
+      ? (prevTotals.surveyCompletions / prevTotals.surveyStarts) * 100 
+      : 0;
+    
+    botConversionChange = botConversion - prevBotConversion;
+    surveyConversionChange = surveyConversion - prevSurveyConversion;
+  }
+  
+  const totalProcessed = totals.rejections + totals.scheduled + totals.noResponse;
+  
+  return {
+    botConversion,
+    botConversionChange,
+    surveyConversion,
+    surveyConversionChange,
+    rejectionRate: totalProcessed > 0 ? (totals.rejections / totalProcessed) * 100 : 0,
+    scheduledRate: totalProcessed > 0 ? (totals.scheduled / totalProcessed) * 100 : 0,
+    noResponseRate: totalProcessed > 0 ? (totals.noResponse / totalProcessed) * 100 : 0,
+    avgInterviewsPerDay: data.length > 0 ? totals.scheduled / data.length : 0,
+    avgCancellationsPerDay: data.length > 0 ? totals.cancellations / data.length : 0,
+    totalCandidates: totals.surveyCompletions,
+    totalInterviews: totals.scheduled,
+  };
+}
+
+// Generate forecast data using simple linear regression with seasonality
+export function generateForecast(
+  historicalData: DailyMetrics[],
+  monthsAhead: 1 | 3 | 6
+): { date: string; predicted: number; lower: number; upper: number }[] {
+  const forecast: { date: string; predicted: number; lower: number; upper: number }[] = [];
+  
+  if (historicalData.length < 30) return forecast;
+  
+  // Calculate average daily visitors from last 30 days
+  const last30Days = historicalData.slice(-30);
+  const avgVisitors = last30Days.reduce((sum, d) => sum + d.totalVisits, 0) / 30;
+  
+  // Calculate trend (simple linear regression on last 90 days)
+  const last90Days = historicalData.slice(-90);
+  const n = last90Days.length;
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  
+  last90Days.forEach((d, i) => {
+    sumX += i;
+    sumY += d.totalVisits;
+    sumXY += i * d.totalVisits;
+    sumX2 += i * i;
+  });
+  
+  const denominator = n * sumX2 - sumX * sumX;
+  const slope = denominator !== 0 ? (n * sumXY - sumX * sumY) / denominator : 0;
+  const intercept = n > 0 ? (sumY - slope * sumX) / n : avgVisitors;
+  
+  // Generate forecast
+  const daysAhead = monthsAhead * 30;
+  const startDate = new Date();
+  
+  for (let i = 1; i <= daysAhead; i++) {
+    const forecastDate = new Date(startDate);
+    forecastDate.setDate(forecastDate.getDate() + i);
+    
+    const seasonMultiplier = getSeasonalMultiplier(forecastDate);
+    const dayOfWeek = forecastDate.getDay();
+    const weekendMultiplier = dayOfWeek === 0 || dayOfWeek === 6 ? 0.3 : 1.0;
+    
+    const trendValue = intercept + slope * (n + i);
+    const predicted = Math.max(0, Math.round(trendValue * seasonMultiplier * weekendMultiplier));
+    
+    // Confidence interval widens over time
+    const uncertainty = 0.1 + (i / daysAhead) * 0.2;
+    const lower = Math.max(0, Math.round(predicted * (1 - uncertainty)));
+    const upper = Math.round(predicted * (1 + uncertainty));
+    
+    forecast.push({
+      date: forecastDate.toISOString().split('T')[0],
+      predicted,
+      lower,
+      upper,
+    });
+  }
+  
+  return forecast;
+}
+
+// Get data grouped by vacancy
+export function getDataByVacancy(
+  data: DailyMetrics[],
+  vacancyIds: string[]
+): Record<string, DailyMetrics[]> {
+  // For mock purposes, distribute data across vacancies
+  const result: Record<string, DailyMetrics[]> = {};
+  
+  vacancyIds.forEach((vId, idx) => {
+    result[vId] = data.map(d => ({
+      ...d,
+      totalVisits: Math.floor(d.totalVisits / vacancyIds.length * (0.8 + Math.random() * 0.4)),
+      botEntries: Math.floor(d.botEntries / vacancyIds.length * (0.8 + Math.random() * 0.4)),
+      surveyStarts: Math.floor(d.surveyStarts / vacancyIds.length * (0.8 + Math.random() * 0.4)),
+      surveyCompletions: Math.floor(d.surveyCompletions / vacancyIds.length * (0.8 + Math.random() * 0.4)),
+      rejections: Math.floor(d.rejections / vacancyIds.length * (0.8 + Math.random() * 0.4)),
+      scheduled: Math.floor(d.scheduled / vacancyIds.length * (0.8 + Math.random() * 0.4)),
+      noResponse: Math.floor(d.noResponse / vacancyIds.length * (0.8 + Math.random() * 0.4)),
+      cancellations: Math.floor(d.cancellations / vacancyIds.length * (0.8 + Math.random() * 0.4)),
+      hired: Math.floor(d.hired / vacancyIds.length * (0.8 + Math.random() * 0.4)),
+    }));
+  });
+  
+  return result;
+}
+
+// Weekly aggregation
+export function aggregateByWeek(data: DailyMetrics[]): DailyMetrics[] {
+  const weeks: Record<string, DailyMetrics> = {};
+  
+  data.forEach(d => {
+    const date = new Date(d.date);
+    const weekStart = new Date(date);
+    weekStart.setDate(date.getDate() - date.getDay());
+    const weekKey = weekStart.toISOString().split('T')[0];
+    
+    if (!weeks[weekKey]) {
+      weeks[weekKey] = { ...d, date: weekKey };
+    } else {
+      weeks[weekKey].totalVisits += d.totalVisits;
+      weeks[weekKey].botEntries += d.botEntries;
+      weeks[weekKey].surveyStarts += d.surveyStarts;
+      weeks[weekKey].surveyCompletions += d.surveyCompletions;
+      weeks[weekKey].rejections += d.rejections;
+      weeks[weekKey].scheduled += d.scheduled;
+      weeks[weekKey].noResponse += d.noResponse;
+      weeks[weekKey].cancellations += d.cancellations;
+      weeks[weekKey].hired += d.hired;
+    }
+  });
+  
+  return Object.values(weeks).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Monthly aggregation  
+export function aggregateByMonth(data: DailyMetrics[]): DailyMetrics[] {
+  const months: Record<string, DailyMetrics> = {};
+  
+  data.forEach(d => {
+    const monthKey = d.date.substring(0, 7);
+    
+    if (!months[monthKey]) {
+      months[monthKey] = { ...d, date: monthKey + '-01' };
+    } else {
+      months[monthKey].totalVisits += d.totalVisits;
+      months[monthKey].botEntries += d.botEntries;
+      months[monthKey].surveyStarts += d.surveyStarts;
+      months[monthKey].surveyCompletions += d.surveyCompletions;
+      months[monthKey].rejections += d.rejections;
+      months[monthKey].scheduled += d.scheduled;
+      months[monthKey].noResponse += d.noResponse;
+      months[monthKey].cancellations += d.cancellations;
+      months[monthKey].hired += d.hired;
+    }
+  });
+  
+  return Object.values(months).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Date range presets
+export type DatePreset = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
+
+export function getDateRangeForPreset(preset: DatePreset): { start: Date; end: Date } {
+  const end = new Date();
+  const start = new Date();
+  
+  switch (preset) {
+    case 'today':
+      break;
+    case 'week':
+      start.setDate(start.getDate() - 7);
+      break;
+    case 'month':
+      start.setMonth(start.getMonth() - 1);
+      break;
+    case 'quarter':
+      start.setMonth(start.getMonth() - 3);
+      break;
+    case 'year':
+      start.setFullYear(start.getFullYear() - 1);
+      break;
+    default:
+      start.setMonth(start.getMonth() - 1);
+  }
+  
+  return { start, end };
+}
+import { clsx, type ClassValue } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
